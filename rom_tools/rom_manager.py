@@ -37,9 +37,29 @@ def _checksum(filename: str) -> str:
             m.update(data)
     return m.hexdigest()
 
+
 def _file_length(filename: str) -> int:
     statinfo = stat(filename)
     return statinfo.st_size
+
+
+vanilla_save_station_tables = {
+    "crateria": (Address(0x0044c5, mode="pc"), 2),
+    "brinstar": (Address(0x0045cf, mode="pc"), 5),
+    "norfair": (Address(0x0046d9, mode="pc"), 6),
+    "wrecked_ship": (Address(0x00481b, mode="pc"), 1),
+    "maridia": (Address(0x004917, mode="pc"), 4),
+    "tourian": (Address(0x004a2f, mode="pc"), 2),
+}
+
+
+subversion_save_station_tables = {
+    "region_1": (Address(0x0044c5, mode="pc"), 5),
+    "region_2": (Address(0x004519, mode="pc"), 3),
+    "region_3": (Address(0x004551, mode="pc"), 3),
+    "region_4": (Address(0x004597, mode="pc"), 7),
+}
+
 
 class RomManager(object):
     """The Rom Manager handles the actual byte facing aspects of the rom editing
@@ -48,10 +68,13 @@ class RomManager(object):
        Also *eventually* will be able to detect if your rom is `pure` and apply
        some necessary patches auto-magically"""
 
+    is_subversion: bool
+
     def __init__(self, clean_name: str, new_name: str) -> None:
         assert clean_name != new_name, "The new rom name cannot be the same as the clean rom name!"
         #TODO: assert that clean_name refers to an actual file,
         # and that new_name does not refer to an existing file
+        self.is_subversion = False
         self.load_rom(clean_name, new_name)
         # Create a memory model for the new ROM
         self.memory = Memory(self)
@@ -63,6 +86,7 @@ class RomManager(object):
         pure_rom_sum = '21f3e98df4780ee1c667b84e57d88675'
         modded_rom_sum = 'idk'
         pure_rom_size = 3145728
+        subversion_rom_size = 4194304
 
         # First, make a copy of clean_name as new_name
         copy_file(clean_name, new_name)
@@ -73,17 +97,21 @@ class RomManager(object):
         # But what to do with the clean one? If we are going to 
         # copy data from the clean one, we need it to be unheadered,
         # but we also want to keep it unchanged.
-        assert filesize == pure_rom_size, "Rom is headered!"
+        if filesize == subversion_rom_size:
+            print("looks like subversion")
+            self.is_subversion = True
+        else:
+            assert filesize == pure_rom_size, f"Rom is headered!  filesize: {filesize}  expecting {pure_rom_size}"
         # if filesize != pure_rom_size:
             # print("This is a headered rom, lets cut it off")
             # self.decapitate_rom(new_name)
             # checksum = _checksum(new_name)
 
         self.clean_rom = open(clean_name, "r+b")
-        
+
         # Mod the rom if necessary
         self.new_rom = open(new_name, "r+b")
-        #TODO: Restrict based on checksum
+        # TODO: Restrict based on checksum
         if mod:
             self.mod_rom()
 
@@ -289,34 +317,18 @@ class RomManager(object):
     def save_table_entries(self, address: Address) -> list[Address]:
         save_station_size = Address(14)
         addrs: list[Address] = []
-        while self.read_from_clean(address, 2) != b"\x00\x00":
+        while self.read_from_clean(address, 2) not in (b"\x00\x00", b"\xff\xff"):
             addrs.append(address)
             address += save_station_size
         return addrs
 
-    def parse(self) -> None:
-        # Vanilla Savestations
-        crateria_save_table = Address(0x0044c5, mode="pc")
-        crateria_savestations = self.save_table_entries(crateria_save_table)
-        assert len(crateria_savestations) == 2
-        brinstar_save_table = Address(0x0045cf, mode="pc")
-        brinstar_savestations = self.save_table_entries(brinstar_save_table)
-        assert len(brinstar_savestations) == 5
-        norfair_save_table = Address(0x0046d9, mode="pc")
-        norfair_savestations = self.save_table_entries(norfair_save_table)
-        assert len(norfair_savestations) == 6
-        wrecked_ship_save_table = Address(0x00481b, mode="pc")
-        wrecked_ship_savestations = self.save_table_entries(wrecked_ship_save_table)
-        assert len(wrecked_ship_savestations) == 1
-        maridia_save_table = Address(0x004917, mode="pc")
-        maridia_savestations = self.save_table_entries(maridia_save_table)
-        assert len(maridia_savestations) == 4
-        tourian_save_table = Address(0x004a2f, mode="pc")
-        tourian_savestations = self.save_table_entries(tourian_save_table)
-        assert len(tourian_savestations) == 2
-        # TODO: what about Ceres?
-        all_saves = crateria_savestations + brinstar_savestations + norfair_savestations + \
-            wrecked_ship_savestations + maridia_savestations + tourian_savestations
+    def parse(self) -> rom_data_structures.ObjNames:
+        save_stations = subversion_save_station_tables if self.is_subversion else vanilla_save_station_tables
+        all_saves: list[Address] = []
+        for region_name, [save_table_addr, expected] in save_stations.items():
+            stations = self.save_table_entries(save_table_addr)
+            assert len(stations) == expected, f"{region_name} save stations: {len(stations)}"
+            all_saves.extend(stations)
         obj_names = rom_data_structures.parse_from_savestations(all_saves, self)
         # Register the objects with the memory model so that we don't allocate new levels
         # on top of existing ones
@@ -333,4 +345,3 @@ class RomManager(object):
         all_saves = [obj for obj in obj_names.values() if isinstance(obj, rom_data_structures.SaveStation)]
         print(f"Saves: {all_saves}")
         rom_data_structures.compile_from_savestations(all_saves, obj_names, self)
-

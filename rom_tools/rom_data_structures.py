@@ -198,7 +198,9 @@ def list_def(fns, terminal, terminal_cond=None):
         out_list = []
         out_size = 0
         while terminal_cond(address, rom):
-            obj, size = parser(address, obj_names, rom, data)
+            parse_result = parser(address, obj_names, rom, data)
+            assert parse_result, f"failed to parse {address}"
+            obj, size = parse_result
             out_list.append(obj)
             out_size += size
             address += Address(size)
@@ -324,11 +326,11 @@ def parse_wrapper(constructor):
                 return
             # Register it first so that it won't be processed twice
             obj_names[name] = None
-            #print("Parsing: {}".format(name))
+            print(f"Parsing: {name}")
             s_objs, size = func(address, obj_names, rom, data)
             #print(constructor)
             #print(s_objs)
-            #print("Done Parsing: {}".format(name))
+            print(f"Done Parsing: {name}  s_objs: {type(s_objs)}  size: {size}")
             # Give the object information about where it came from, and
             # the ability to use obj_names for indexing
             s = constructor(name, address, size, obj_names, *s_objs)
