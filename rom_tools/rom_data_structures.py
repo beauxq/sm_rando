@@ -157,9 +157,9 @@ def parse_engine(obj_def, address, obj_names, rom, data):
             new_data = data_fun(data, objs)
         else:
             new_data = None
-        #print("Using {} at {}".format(parser.__name__, address))
+        print(f"Using {parser.__name__} at {address}")
         obj, size = parser(address, obj_names, rom, new_data)
-        #print("Got: {}, Size: {} from {} at {}\n".format(obj, size, parser.__name__, address))
+        print(f"Got: {obj}, Size: {size} from {parser.__name__} at {address}\n")
         objs.append(obj)
         address += Address(size)
         total_size += size
@@ -331,6 +331,8 @@ def parse_wrapper(constructor):
             #print(constructor)
             #print(s_objs)
             print(f"Done Parsing: {name}  s_objs: {type(s_objs)}  size: {size}")
+            if isinstance(s_objs, list):
+                print(f"  list len: {len(s_objs)}")
             # Give the object information about where it came from, and
             # the ability to use obj_names for indexing
             s = constructor(name, address, size, obj_names, *s_objs)
