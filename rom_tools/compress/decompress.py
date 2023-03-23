@@ -1,18 +1,18 @@
+from typing import Callable
 
 # i is the int from which to get bits (one byte)
 # n is the number of bits to get
 # p is where to start getting them from (indexed from 0 is the high bit of i)
-from typing import Callable, Sequence
 
 
-def get_n_bits(i, n, p):
+def get_n_bits(i: int, n: int, p: int) -> int:
     end = (8 - n - p)
     assert end >= 0
     mask = (2**n - 1) << end
     return (i & mask) >> end
 
 
-def decompress_with_size(src: Sequence[int], debug: bool = False) -> tuple[bytes, int]:
+def decompress_with_size(src: bytes, debug: bool = False) -> tuple[bytes, int]:
     dst = b""
     index = 0
     while True:
@@ -39,7 +39,7 @@ def decompress_with_size(src: Sequence[int], debug: bool = False) -> tuple[bytes
         # Arg is adjusted by 1 since ex. direct_copy 0 copies 1 byte
         adj_n = n + 1
         # Find the alg to use
-        cmd: Callable[[int, int, Sequence[int], bytes, bool], tuple[bytes, int]]
+        cmd: Callable[[int, int, bytes, bytes, bool], tuple[bytes, int]]
         if cmd_code == 0:
             cmd = direct_copy
         elif cmd_code == 1:
@@ -63,18 +63,21 @@ def decompress_with_size(src: Sequence[int], debug: bool = False) -> tuple[bytes
         dst += new
     return dst, index
 
-def decompress(src: Sequence[int], debug: bool = False) -> bytes:
-    dst, index = decompress_with_size(src, debug=debug)
+
+def decompress(src: bytes, debug: bool = False) -> bytes:
+    dst, _index = decompress_with_size(src, debug=debug)
     return dst
 
-def direct_copy(n, index, src, dst, debug):
+
+def direct_copy(n: int, index: int, src: bytes, dst: bytes, debug: bool) -> tuple[bytes, int]:
     arg = src[index:index+n]
     if debug:
         print("DIRECTCOPY({}) from {} to {} of size {}".format(arg, len(dst), len(dst) + n, hex(n)))
     assert len(arg) == n, (len(arg), n)
     return arg, index + n
 
-def bytefill(n, index, src, dst, debug):
+
+def bytefill(n: int, index: int, src: bytes, dst: bytes, debug: bool) -> tuple[bytes, int]:
     arg = src[index:index+1]
     if debug:
         print("BYTEFILL from {} to {} of size {}".format(len(dst), len(dst) + n, hex(n)))
@@ -82,13 +85,15 @@ def bytefill(n, index, src, dst, debug):
     assert len(out) == n
     return out, index+1
 
-def n_bytes_of_word(n, word):
+
+def n_bytes_of_word(n: int, word: bytes) -> bytes:
     whole = n // 2
     half = n % 2
     out = whole * word + half * word[0:1]
     return out
 
-def wordfill(n, index, src, dst, debug):
+
+def wordfill(n: int, index: int, src: bytes, dst: bytes, debug: bool) -> tuple[bytes, int]:
     arg = src[index:index+2]
     if debug:
         print("WORDFILL from {} to {} of size {}".format(len(dst), len(dst) + n, hex(n)))
@@ -96,7 +101,8 @@ def wordfill(n, index, src, dst, debug):
     assert len(out) == n
     return out, index+2
 
-def sigmafill(n, index, src, dst, debug):
+
+def sigmafill(n: int, index: int, src: bytes, dst: bytes, debug: bool) -> tuple[bytes, int]:
     arg = src[index]
     out = b""
     for i in range(n):
@@ -107,33 +113,37 @@ def sigmafill(n, index, src, dst, debug):
     assert len(out) == n
     return out, index+1
 
-def addr_copy(n, index, src, dst, debug):
+
+def addr_copy(n: int, index: int, src: bytes, dst: bytes, debug: bool) -> tuple[bytes, int]:
     arg_bytes = src[index:index+2]
     arg = int.from_bytes(arg_bytes, byteorder='little')
     to_copy = get_copy_bytes(arg, arg + n, dst)
     if debug:
         print("ADDRCPY({}) from {} to {} of size {}".format(arg, len(dst), len(dst) + n, hex(n)))
         print(to_copy)
-    assert len(to_copy) == n #TODO
+    assert len(to_copy) == n  # TODO
     return to_copy, index+2
 
-def map_bytes(op, byte):
+
+def map_bytes(op: Callable[[int], int], byte: bytes):
     out = b""
     for b in byte:
         out += op(b).to_bytes(1, byteorder='little')
     return out
 
-def addr_xor_copy(n, index, src, dst, debug):
+
+def addr_xor_copy(n: int, index: int, src: bytes, dst: bytes, debug: bool) -> tuple[bytes, int]:
     arg_bytes = src[index:index+2]
     arg = int.from_bytes(arg_bytes, byteorder='little')
-    to_copy = get_copy_bytes(arg, arg+n, dst, lambda x: x^0xff)
+    to_copy = get_copy_bytes(arg, arg+n, dst, lambda x: x ^ 0xff)
     if debug:
         print("ADDRXORCPY({}) from {} to {} of size {}".format(arg, len(dst), len(dst) + n, hex(n)))
         print(to_copy)
     assert len(to_copy) == n, (len(to_copy), n)
     return to_copy, index+2
 
-def get_copy_bytes(index0, index1, dst, op=lambda x: x):
+
+def get_copy_bytes(index0: int, index1: int, dst: bytes, op: Callable[[int], int] = lambda x: x) -> bytes:
     """Get the bytes between index0 and index1 in dst. If index1 is past the end of dst, then this wraps as many
     times as is necessary to simulate those bytes being already copied."""
     # TODO: Allow my own compression to use this feature...
@@ -150,7 +160,8 @@ def get_copy_bytes(index0, index1, dst, op=lambda x: x):
         index0 += 1
     return buf
 
-def rel_addr_copy(n, index, src, dst, debug):
+
+def rel_addr_copy(n: int, index: int, src: bytes, dst: bytes, debug: bool) -> tuple[bytes, int]:
     # One byte
     arg = src[index]
     # Can't use negative indexing because n-arg can be zero
@@ -163,4 +174,4 @@ def rel_addr_copy(n, index, src, dst, debug):
     assert len(to_copy) == n, (len(to_copy), n, index0, index1)
     return to_copy, index+1
 
-#TODO rel_addr_xor_copy: an extended command with cmd-code 7 is a relative address xor copy!
+# TODO rel_addr_xor_copy: an extended command with cmd-code 7 is a relative address xor copy!
